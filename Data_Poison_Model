@@ -1,0 +1,123 @@
+# Data Poisoning
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
+
+# --- 1. Data Creation Functions ---
+
+def create_clean_data():
+    """Generates a simple, well-separated dataset with two classes."""
+    # Class 0 (Benign) - centered around (2, 2)
+    X_class0 = np.random.randn(100, 2) + [2, 2]
+    y_class0 = np.zeros(100, dtype=int)
+    
+    # Class 1 (Malicious) - centered around (8, 8)
+    X_class1 = np.random.randn(100, 2) + [8, 8]
+    y_class1 = np.ones(100, dtype=int)
+    
+    # Combine
+    X_clean = np.vstack([X_class0, X_class1])
+    y_clean = np.hstack([y_class0, y_class1])
+    return X_clean, y_clean
+
+def create_poisoned_data(X_clean, y_clean, poison_count=30):
+    """
+    Simulates a poisoning attack by adding mislabeled data.
+    The attacker adds points that look like Class 1 but are labeled as Class 0.
+    """
+    # Create poison points: physically near (8, 8)
+    X_poison = np.random.randn(poison_count, 2) + [8, 8] 
+    
+    # Mislabel them as Class 0 (the 'Benign' class)
+    y_poison = np.zeros(poison_count, dtype=int) 
+    
+    print(f"[Attack] Injecting {poison_count} mislabeled 'poison' points.")
+    
+    # Add the poison data to the clean dataset
+    X_poisoned = np.vstack([X_clean, X_poison])
+    y_poisoned = np.hstack([y_clean, y_poison])
+    
+    return X_poisoned, y_poisoned
+
+# --- 2. Model Training Function ---
+
+def train_model(X, y):
+    """Trains a simple Logistic Regression model."""
+    model = LogisticRegression()
+    model.fit(X, y)
+    return model
+
+# --- 3. Visualization Function ---
+
+def plot_decision_boundary(model, X, y, title):
+    """
+    Plots the dataset and the model's decision boundary.
+    This function is key to *seeing* the attack's effect.
+    """
+    # Create a grid of points to plot the background
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.02),
+                         np.arange(y_min, y_max, 0.02))
+    
+    # Get model's prediction for each point on the grid
+    Z = model.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+    
+    # Plot the decision boundary (colors)
+    plt.contourf(xx, yy, Z, cmap=plt.cm.RdYlBu, alpha=0.8)
+    
+    # Plot the data points
+    plt.scatter(X[y==0][:, 0], X[y==0][:, 1], c='yellow', label='Class 0 (Benign)', edgecolor='k')
+    plt.scatter(X[y==1][:, 0], X[y==1][:, 1], c='blue', label='Class 1 (Malicious)', edgecolor='k')
+    
+    # Plot the mislabeled poison points in a different marker (if they exist)
+    if 'Poisoned' in title:
+        # The poison points are the last 'poison_count' points we added
+        # They were mislabeled as 'Class 0', so they will be yellow
+        poison_points = X[y==0][-30:] # A bit of a shortcut, assuming 30 points
+        plt.scatter(poison_points[:, 0], poison_points[:, 1],
+                    c='yellow', marker='X', s=100, label='Poison (Mislabeled)', edgecolor='red')
+
+    plt.legend()
+    plt.title(title)
+    plt.xlabel("Feature 1")
+    plt.ylabel("Feature 2")
+    plt.show()
+
+# --- 4. Main Execution ---
+
+if __name__ == "__main__":
+    
+    # --- Clean Model ---
+    print("--- 1. Training Clean Model ---")
+    X_clean, y_clean = create_clean_data()
+    model_clean = train_model(X_clean, y_clean)
+    
+    # Plot the clean model's decision boundary
+    plot_decision_boundary(model_clean, X_clean, y_clean, "Clean Model Decision Boundary")
+    
+    # --- Poisoned Model ---
+    print("\n--- 2. Training Poisoned Model ---")
+    X_poisoned, y_poisoned = create_poisoned_data(X_clean, y_clean, poison_count=30)
+    model_poisoned = train_model(X_poisoned, y_poisoned)
+    
+    # Plot the poisoned model's decision boundary
+    # We plot it against the *poisoned* dataset to see all points
+    plot_decision_boundary(model_poisoned, X_poisoned, y_poisoned, "Poisoned Model Decision Boundary")
+    
+    # --- Test and Compare ---
+    print("\n--- 3. Observing the Impact ---")
+    test_point = np.array([[8.5, 8.5]]) # This point is clearly in the "Class 1" area
+    
+    pred_clean = model_clean.predict(test_point)
+    pred_poisoned = model_poisoned.predict(test_point)
+    
+    print(f"Test Point: {test_point}")
+    print(f"Clean Model Prediction:   {pred_clean[0]}  (Correct)")
+    print(f"Poisoned Model Prediction: {pred_poisoned[0]}  (Incorrect!)")
+
+    if pred_clean[0] == 1 and pred_poisoned[0] == 0:
+        print("\n*** ATTACK SUCCESSFUL ***")
+        print("The poisoned model was tricked into misclassifying the new point.")
